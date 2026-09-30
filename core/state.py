@@ -1,7 +1,7 @@
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ValidationStatus(StrEnum):
@@ -29,6 +29,25 @@ class PolicyFinding(BaseModel):
     compliant: bool
 
 
+class ExtractionPlan(BaseModel):
+    """Evidence-backed extraction and proposed next action from the Extractor."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    observation_summary: str = Field(min_length=1)
+    entities: list[ComplianceEntity] = Field(default_factory=list)
+    needs_policy_lookup: bool
+    policy_queries: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_lookup_plan(self) -> Self:
+        if self.needs_policy_lookup and not self.policy_queries:
+            raise ValueError("Policy lookup requires at least one query")
+        if not self.needs_policy_lookup and self.policy_queries:
+            raise ValueError("Policy queries require needs_policy_lookup=true")
+        return self
+
+
 class AgentError(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -46,6 +65,9 @@ class VendorRiskState(BaseModel):
 
     original_document: str = Field(min_length=1)
     extracted_entities: list[ComplianceEntity] = Field(default_factory=list)
+    extraction_summary: str | None = None
+    needs_policy_lookup: bool = False
+    policy_queries: list[str] = Field(default_factory=list)
     policy_findings: list[PolicyFinding] = Field(default_factory=list)
     validation_status: ValidationStatus = ValidationStatus.PENDING
     error_logs: list[AgentError] = Field(default_factory=list)
