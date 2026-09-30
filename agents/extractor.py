@@ -1,6 +1,8 @@
+import json
+
 from core.state import ExtractionPlan, VendorRiskState
 
-from .model_provider import StructuredModel, json_document
+from .model_provider import StructuredModel
 
 
 class UnverifiedEvidenceError(ValueError):
@@ -19,7 +21,7 @@ Return only data matching the requested response schema. Provide a short factual
 observation summary, not private chain-of-thought.
 
 Source document JSON string:
-{json_document(document)}"""
+{json.dumps(document, ensure_ascii=True)}"""
 
 
 class VendorRiskExtractor:

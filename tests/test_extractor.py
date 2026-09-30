@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from agents.extractor import UnverifiedEvidenceError, VendorRiskExtractor
-from agents.model_provider import GeminiStructuredModel
+from agents.providers.google_genai import GeminiStructuredModel
 from core.state import ComplianceEntity, ExtractionPlan, VendorRiskState
 
 ResponseT = TypeVar("ResponseT", bound=BaseModel)
@@ -112,11 +112,11 @@ def test_gemini_adapter_uses_injected_client_and_requested_schema() -> None:
     assert result == expected
     assert client.models.request["model"] == "test-model"
     assert client.models.request["contents"] == "Extract the claims."
-    assert client.models.request["config"].response_schema is ExtractionPlan
+    assert client.models.request["config"]["response_schema"] is ExtractionPlan
 
 
 def test_gemini_adapter_rejects_missing_structured_output() -> None:
-    model = GeminiStructuredModel(client=FakeGeminiClient(None))
+    model = GeminiStructuredModel(model_name="test-model", client=FakeGeminiClient(None))
 
     with pytest.raises(RuntimeError, match="no parsed structured response"):
         model.generate_structured(prompt="Extract the claims.", response_model=ExtractionPlan)

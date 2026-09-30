@@ -1,0 +1,1 @@
+"""Optional concrete model provider adapters."""
