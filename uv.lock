@@ -668,6 +668,7 @@ dependencies = [
     { name = "langgraph" },
     { name = "mcp" },
     { name = "networkx" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -682,6 +683,7 @@ requires-dist = [
     { name = "langgraph", specifier = ">=0.2.0" },
     { name = "mcp", specifier = ">=1.0.0,<2.0.0" },
     { name = "networkx", specifier = ">=3.2" },
+    { name = "pydantic", specifier = ">=2.7.0" },
 ]
 
 [package.metadata.requires-dev]
