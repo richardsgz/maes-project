@@ -73,3 +73,5 @@ class VendorRiskState(BaseModel):
     error_logs: list[AgentError] = Field(default_factory=list)
     retry_count: int = Field(default=0, ge=0)
     max_retries: int = Field(default=2, ge=0)
+    next_step: Literal["Supervisor", "Extractor", "Validator", "Error", "END"] = "Supervisor"
+    error_state_reached: bool = False
