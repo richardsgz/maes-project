@@ -26,7 +26,7 @@ class PolicyFinding(BaseModel):
     policy_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
     entity_value: str = Field(min_length=1)
-    compliant: bool
+    compliant: bool | None
 
 
 class ExtractionPlan(BaseModel):
