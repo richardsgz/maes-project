@@ -6,7 +6,7 @@ MAES (Memory-Augmented Enterprise Swarm) is a Python 3.12+ foundation for coordi
 
 - **Supervisor/Worker orchestration:** `core/orchestrator.py` defines a Pydantic-backed async LangGraph `StateGraph`. The Supervisor routes to the Extractor, Validator, Error node, or completion. Failed policy validation can trigger a bounded extraction retry with the prior findings as context; MCP errors and ungrounded evidence route to the terminal Error node and remain in structured state.
 - **MCP policy validation:** `mcp_servers/data_server.py` exposes `query_enterprise_rules` with typed query and response models from `core/policy.py`. The demo server has an in-memory certification-validity rule; `agents/policy_client.py` calls it over stdio, and `agents/validator.py` compares returned requirements with extracted evidence. Replace the demo rule catalog with an authorized enterprise policy source before production use.
-- **Persistent memory graph:** `memory/` is the home for a NetworkX-backed knowledge graph. Persisting entities, relationships, provenance, and validated corrections there will let later runs retrieve prior outcomes and improve extraction. The storage and retrieval adapter is an extension point, not implemented in this initial scaffold.
+- **Persistent memory graph:** `memory/graph.py` stores completed entity observations and policy outcomes in a NetworkX directed multigraph, persisted atomically as versioned JSON. Later runs retrieve relevant history as untrusted context for extraction; changed evidence that turns a prior failure into a pass is linked as a correction. The full source document is not stored, but its digest, evidence quotes, and extraction summaries are, so the memory file must be treated as sensitive. This JSON-backed implementation is intended for a single-process MVP, not concurrent production workloads.
 - **Provider-neutral model access:** Agent workers depend on the `StructuredModel` protocol in `agents/model_provider.py`. `core/model_factory.py` selects a registered adapter from explicit configuration, while concrete integrations live under `agents/providers/`. Gemini is an optional adapter, not a core dependency.
 
 ## Getting started
@@ -53,6 +53,7 @@ from agents.validator import VendorRiskValidator
 from core.model_factory import create_structured_model
 from core.state import VendorRiskState
 from core.orchestrator import build_graph
+from memory.graph import NetworkXMemoryGraph
 
 graph = build_graph(
 	extractor=VendorRiskExtractor(create_structured_model()),
@@ -64,6 +65,7 @@ graph = build_graph(
 			)
 		)
 	),
+	memory=NetworkXMemoryGraph("data/maes-memory.json"),
 )
 
 async def main():

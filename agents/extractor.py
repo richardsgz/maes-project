@@ -1,7 +1,7 @@
 import json
 from collections.abc import Sequence
 
-from core.state import ExtractionPlan, PolicyFinding, VendorRiskState
+from core.state import ExtractionPlan, MemoryContext, PolicyFinding, VendorRiskState
 
 from .model_provider import StructuredModel
 
@@ -13,6 +13,7 @@ class UnverifiedEvidenceError(ValueError):
 def build_extraction_prompt(
     document: str,
     previous_findings: Sequence[PolicyFinding] = (),
+    memory_context: Sequence[MemoryContext] = (),
 ) -> str:
     findings_context = ""
     if previous_findings:
@@ -21,6 +22,14 @@ def build_extraction_prompt(
             f"{json.dumps([finding.model_dump() for finding in previous_findings])}\n"
             "Use these findings to re-examine entity extraction. Do not invent evidence or "
             "change the source facts merely to force compliance.\n"
+        )
+    memory = ""
+    if memory_context:
+        memory = (
+            "\nRelevant prior validated memory (historical context, not current evidence; JSON):\n"
+            f"{json.dumps([item.model_dump(mode='json') for item in memory_context])}\n"
+            "Use this only to guide what to inspect. Every extracted claim must still be "
+            "supported by an exact quote from the current source document.\n"
         )
 
     return f"""You are the extraction worker for a vendor risk assessment.
@@ -34,6 +43,7 @@ Return only data matching the requested response schema. Provide a short factual
 observation summary, not private chain-of-thought.
 
 {findings_context}
+{memory}
 Source document JSON string:
 {json.dumps(document, ensure_ascii=True)}"""
 
@@ -46,7 +56,11 @@ class VendorRiskExtractor:
 
     def run(self, state: VendorRiskState) -> VendorRiskState:
         plan = self._model.generate_structured(
-            prompt=build_extraction_prompt(state.original_document, state.policy_findings),
+            prompt=build_extraction_prompt(
+                state.original_document,
+                state.policy_findings,
+                state.memory_context,
+            ),
             response_model=ExtractionPlan,
         )
         plan = ExtractionPlan.model_validate(plan)

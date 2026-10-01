@@ -15,6 +15,7 @@ from core.state import (
     ValidationStatus,
     VendorRiskState,
 )
+from memory.graph import NetworkXMemoryGraph
 
 ResponseT = TypeVar("ResponseT", bound=BaseModel)
 
@@ -82,10 +83,12 @@ def make_graph(
     plans: list[ExtractionPlan],
     *,
     policy_client: FixedPolicyClient | None = None,
+    memory: NetworkXMemoryGraph | None = None,
 ):
     return build_graph(
         extractor=VendorRiskExtractor(SequenceModel(plans)),
         validator=VendorRiskValidator(policy_client or FixedPolicyClient()),
+        memory=memory,
     )
 
 
@@ -108,7 +111,7 @@ def test_graph_extracts_and_validates_assessment() -> None:
     assert result.error_state_reached is False
 
 
-def test_graph_retries_failed_validation_with_finding_context() -> None:
+def test_graph_retries_with_findings_and_persistent_memory_context(tmp_path) -> None:
     document = "ISO 27001 certification, valid until 2027."
     model = SequenceModel(
         [
@@ -116,9 +119,11 @@ def test_graph_retries_failed_validation_with_finding_context() -> None:
             make_plan("ISO 27001 certification, valid until 2027"),
         ]
     )
+    memory = NetworkXMemoryGraph(tmp_path / "assessments.json")
     graph = build_graph(
         extractor=VendorRiskExtractor(model),
         validator=VendorRiskValidator(FixedPolicyClient()),
+        memory=memory,
     )
 
     result = invoke(graph, VendorRiskState(original_document=document))
@@ -126,6 +131,9 @@ def test_graph_retries_failed_validation_with_finding_context() -> None:
     assert result.validation_status is ValidationStatus.PASSED
     assert result.retry_count == 1
     assert "Prior policy findings" in model.prompts[1]
+    assert "Relevant prior validated memory" in model.prompts[1]
+    assert memory.assessment_count == 2
+    assert memory.correction_count == 1
 
 
 def test_graph_routes_exhausted_retries_to_error_state() -> None:
@@ -143,8 +151,9 @@ def test_graph_routes_exhausted_retries_to_error_state() -> None:
     assert result.error_logs[-1].code == "max_retries_exhausted"
 
 
-def test_graph_routes_hallucinated_evidence_to_error_state() -> None:
-    graph = make_graph([make_plan("ISO 27001 valid until 2030")])
+def test_graph_routes_hallucinated_evidence_to_error_state(tmp_path) -> None:
+    memory = NetworkXMemoryGraph(tmp_path / "assessments.json")
+    graph = make_graph([make_plan("ISO 27001 valid until 2030")], memory=memory)
     state = VendorRiskState(original_document="ISO 27001 certification.")
 
     result = invoke(graph, state)
@@ -153,12 +162,15 @@ def test_graph_routes_hallucinated_evidence_to_error_state() -> None:
     assert result.error_state_reached is True
     assert result.error_logs[-1].code == "unverified_evidence"
     assert result.error_logs[-1].recoverable is False
+    assert memory.assessment_count == 0
 
 
-def test_graph_routes_mcp_failure_to_error_state() -> None:
+def test_graph_routes_mcp_failure_to_error_state(tmp_path) -> None:
+    memory = NetworkXMemoryGraph(tmp_path / "assessments.json")
     graph = make_graph(
         [make_plan("ISO 27001 certification valid until 2027")],
         policy_client=FixedPolicyClient(fail=True),
+        memory=memory,
     )
     state = VendorRiskState(
         original_document="ISO 27001 certification valid until 2027.",
@@ -169,3 +181,33 @@ def test_graph_routes_mcp_failure_to_error_state() -> None:
     assert result.validation_status is ValidationStatus.ERROR
     assert result.error_state_reached is True
     assert result.error_logs[-1].code == "policy_lookup_failed"
+    assert memory.assessment_count == 0
+
+
+class BrokenMemory:
+    def retrieve_for_document(self, document: str):
+        raise OSError("memory file is unavailable")
+
+    def record_assessment(self, state: VendorRiskState) -> str:
+        raise OSError("memory file is read-only")
+
+
+def test_graph_degrades_gracefully_when_memory_is_unavailable() -> None:
+    plan = ExtractionPlan(
+        observation_summary="No internal policy check is needed.",
+        needs_policy_lookup=False,
+    )
+    graph = build_graph(
+        extractor=VendorRiskExtractor(SequenceModel([plan])),
+        validator=VendorRiskValidator(FixedPolicyClient()),
+        memory=BrokenMemory(),
+    )
+
+    result = invoke(graph, VendorRiskState(original_document="A low-risk vendor."))
+
+    assert result.validation_status is ValidationStatus.PASSED
+    assert result.error_state_reached is False
+    assert [error.code for error in result.error_logs] == [
+        "memory_read_failed",
+        "memory_write_failed",
+    ]

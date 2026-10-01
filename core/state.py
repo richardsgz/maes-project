@@ -29,6 +29,17 @@ class PolicyFinding(BaseModel):
     compliant: bool | None
 
 
+class MemoryContext(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    entity_type: str = Field(min_length=1)
+    entity_value: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    validation_status: ValidationStatus
+    policy_findings: list[PolicyFinding] = Field(default_factory=list)
+    correction_note: str | None = None
+
+
 class ExtractionPlan(BaseModel):
     """Evidence-backed extraction and proposed next action from the Extractor."""
 
@@ -51,7 +62,7 @@ class ExtractionPlan(BaseModel):
 class AgentError(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    stage: Literal["extractor", "mcp", "validator", "orchestrator"]
+    stage: Literal["extractor", "mcp", "validator", "orchestrator", "memory"]
     code: str = Field(min_length=1)
     message: str = Field(min_length=1)
     recoverable: bool = True
@@ -69,6 +80,7 @@ class VendorRiskState(BaseModel):
     needs_policy_lookup: bool = False
     policy_queries: list[str] = Field(default_factory=list)
     policy_findings: list[PolicyFinding] = Field(default_factory=list)
+    memory_context: list[MemoryContext] = Field(default_factory=list)
     validation_status: ValidationStatus = ValidationStatus.PENDING
     error_logs: list[AgentError] = Field(default_factory=list)
     retry_count: int = Field(default=0, ge=0)
